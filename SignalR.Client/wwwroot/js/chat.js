@@ -8,6 +8,9 @@ const connection = new signalR.HubConnectionBuilder()
 const sendButton = document.getElementById("sendButton");
 const status = document.getElementById("status");
 const messagesList = document.getElementById("messagesList");
+const roomSelect = document.getElementById("roomSelect");
+
+let currentRoom = roomSelect.value;
 
 // El servidor envía el evento "ReceiveMessage": lo mostramos
 connection.on("ReceiveMessage", (message) => {
@@ -26,14 +29,27 @@ connection.onreconnecting(() => {
     sendButton.disabled = true;
 });
 
-connection.onreconnected(() => {
-    status.textContent = "Conectado";
-    sendButton.disabled = false;
+// Al reconectar cambia el connectionId y se pierde el grupo: hay que volver a entrar
+connection.onreconnected(async () => {
+    try {
+        await connection.invoke("JoinRoom", currentRoom);
+        status.textContent = "Conectado";
+        sendButton.disabled = false;
+    } catch (error) {
+        status.textContent = "Error al volver a la sala";
+        console.error(error);
+    }
+});
+
+connection.onclose(() => {
+    status.textContent = "Desconectado. Recarga la página.";
+    sendButton.disabled = true;
 });
 
 async function startConnection() {
     try {
         await connection.start();
+        await connection.invoke("JoinRoom", currentRoom);
         status.textContent = "Conectado";
         sendButton.disabled = false;
     } catch (error) {
@@ -41,6 +57,20 @@ async function startConnection() {
         console.error(error);
     }
 }
+
+roomSelect.addEventListener("change", async () => {
+    const newRoom = roomSelect.value;
+
+    try {
+        await connection.invoke("LeaveRoom", currentRoom);
+        await connection.invoke("JoinRoom", newRoom);
+        currentRoom = newRoom;
+        messagesList.innerHTML = "";
+    } catch (error) {
+        console.error("No se pudo cambiar de sala:", error);
+        roomSelect.value = currentRoom;
+    }
+});
 
 sendButton.addEventListener("click", async () => {
     const user = document.getElementById("userInput").value.trim();
@@ -57,7 +87,7 @@ sendButton.addEventListener("click", async () => {
     }
 
     try {
-        await connection.invoke("SendMessage", user, message);
+        await connection.invoke("SendMessage", user, message, currentRoom);
         document.getElementById("messageInput").value = "";
     } catch (error) {
         console.error("No se pudo enviar el mensaje:", error);
